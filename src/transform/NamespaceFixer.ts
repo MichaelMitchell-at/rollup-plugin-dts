@@ -38,6 +38,7 @@ export class NamespaceFixer {
   findNamespaces() {
     const namespaces: Array<Namespace> = [];
     const items: { [key: string]: Item } = {};
+    const sideEffects: Array<{start: number, end: number}>  = [];
 
     for (const node of this.sourceFile.statements) {
       const location = {
@@ -110,6 +111,9 @@ export class NamespaceFixer {
               }
             }
           }
+          if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
+            sideEffects.push({start: stmt.expression.pos, end: stmt.expression.end});
+          }
         }
       }
 
@@ -173,13 +177,19 @@ export class NamespaceFixer {
         location,
       });
     }
-    return { namespaces, itemTypes: items };
+    return { namespaces, itemTypes: items, sideEffects };
   }
 
   public fix() {
     let code = this.sourceFile.getFullText();
 
-    const { namespaces, itemTypes } = this.findNamespaces();
+    const { namespaces, itemTypes, sideEffects } = this.findNamespaces();
+
+    // Replace the function calls with whitespace in order to remove them without
+    // changing the text ranges of the other nodes.
+    for (const {start, end} of sideEffects) {
+      code = code.slice(0, start) + Array.from({length: end - start}).fill(' ').join('') + code.slice(end);
+    }
 
     for (const ns of namespaces) {
       const codeAfter = code.slice(ns.location.end);
@@ -221,6 +231,9 @@ export class NamespaceFixer {
       code += ns.textBeforeCodeAfter ?? "";
       code += codeAfter;
     }
+
+    // Cleanup the empty whitespace inserted over the function calls above.
+    code = code.replaceAll(/ +\n$/gm, '');
 
     return code;
   }

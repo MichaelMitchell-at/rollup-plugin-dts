@@ -101,7 +101,10 @@ export class ExportsFixer {
           this.DEBUG && console.log(`${statement.name.getFullText()} is a value (from module declaration)`);
           values.push(statement.name);
         }
-        recurseInto(statement.getChildren());
+        if (!statement.body || !ts.isModuleBlock(statement.body)) {
+          continue;
+        }
+        recurseInto(statement.body.statements);
         continue;
       }
       if (ts.isExportDeclaration(statement)) {

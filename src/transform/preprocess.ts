@@ -61,6 +61,42 @@ export function preProcess({ sourceFile }: PreProcessInput): PreProcessOutput {
       code.remove(node.getStart(), node.getEnd());
       continue;
     }
+
+    if (
+      ts.isImportEqualsDeclaration(node) &&
+      (ts.isIdentifier(node.moduleReference) || ts.isQualifiedName(node.moduleReference))
+    ) {
+      const newNode = ts.factory.createVariableStatement(
+        node.modifiers?.map((modifier) =>
+          modifier.kind === ts.SyntaxKind.ExportKeyword
+            ? ts.factory.createModifier(ts.SyntaxKind.DeclareKeyword)
+            : modifier,
+        ),
+        [
+          ts.factory.createVariableDeclaration(
+            node.name,
+            undefined,
+            ts.factory.createTypeQueryNode(node.moduleReference),
+          ),
+        ],
+      );
+
+      code.overwrite(
+        node.getStart(),
+        node.getEnd(),
+        ts.createPrinter().printNode(ts.EmitHint.Unspecified, newNode, sourceFile),
+      );
+
+      const name = node.name.getText();
+      declaredNames.add(name);
+
+      if (matchesModifier(node, ts.ModifierFlags.Export)) {
+        exportedNames.add(name);
+      }
+
+      continue;
+    }
+
     if (
       ts.isEnumDeclaration(node) ||
       ts.isFunctionDeclaration(node) ||
@@ -87,7 +123,7 @@ export function preProcess({ sourceFile }: PreProcessInput): PreProcessOutput {
 
       // duplicate exports of namespaces
       if (ts.isModuleDeclaration(node)) {
-        duplicateExports(code, node);
+        duplicateExports(code, node, sourceFile);
       }
 
       fixModifiers(code, node);
@@ -342,7 +378,7 @@ function fixModifiers(code: MagicString, node: ts.Node) {
   }
 }
 
-function duplicateExports(code: MagicString, module: ts.ModuleDeclaration) {
+function duplicateExports(code: MagicString, module: ts.ModuleDeclaration, sourceFile: ts.SourceFile) {
   if (!module.body || !ts.isModuleBlock(module.body)) {
     return;
   }
@@ -356,6 +392,42 @@ function duplicateExports(code: MagicString, module: ts.ModuleDeclaration) {
           code.appendLeft(decl.name.getEnd(), ` as ${decl.name.getText()}`);
         }
       }
+      continue;
+    }
+
+    if (
+      ts.isImportEqualsDeclaration(node) &&
+      (ts.isIdentifier(node.moduleReference) || ts.isQualifiedName(node.moduleReference))
+    ) {
+      // We insert a function call expression since Rollup sees it as having a side-effect
+      // so that it Rollup won't try to tree-shake the identifier away. Later we'll remove it.
+      const sideEffectNode = ts.factory.createCallExpression(
+        node.name,
+        undefined,
+        [],
+      );
+      const variableDeclarationNode = ts.factory.createVariableStatement(
+        node.modifiers,
+        [
+          ts.factory.createVariableDeclaration(
+            node.name,
+            undefined,
+            ts.factory.createTypeQueryNode(node.moduleReference),
+          ),
+        ],
+      );
+
+      code.overwrite(
+        node.getStart(),
+        node.getEnd(),
+        ts.createPrinter().printList(
+          ts.ListFormat.MultiLine,
+          ts.factory.createNodeArray([variableDeclarationNode, sideEffectNode]),
+          sourceFile,
+        ),
+      );
+
+      continue;
     }
   }
 }

@@ -367,7 +367,7 @@ export class DeclarationScope {
         }
         continue;
       }
-      if (ts.isExportDeclaration(stmt)) {
+      if (ts.isExportDeclaration(stmt) || ts.isExpressionStatement(stmt)) {
         // noop
       } else {
         throw new UnsupportedSyntaxError(stmt, `namespace child (hoisting) not supported yet`);
@@ -407,6 +407,18 @@ export class DeclarationScope {
       }
       if (ts.isEnumDeclaration(stmt)) {
         // noop
+        continue;
+      }
+      if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression) && ts.isIdentifier(stmt.expression.expression)) {
+        this.declaration.body.body.splice(this.declaration.body.body.length - 1, 0, {
+          type: 'ExpressionStatement',
+          expression: {
+            type: 'CallExpression',
+            callee: {type: 'Identifier', name: stmt.expression.expression.text},
+            arguments: [],
+            optional: false,
+          },
+        });
         continue;
       }
       if (ts.isExportDeclaration(stmt)) {

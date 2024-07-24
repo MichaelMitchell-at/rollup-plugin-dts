@@ -131,7 +131,11 @@ export const transform = () => {
 
       const exportsFixer = new ExportsFixer(parse(chunk.fileName, code));
 
-      return { code: exportsFixer.fix(), map: { mappings: "" } };
+      code = exportsFixer.fix();
+
+      code = code.replaceAll(/(?:declare|export) var ([^:]+): typeof /gm, "export import $1 = ");
+
+      return { code, map: { mappings: "" } };
     },
   } satisfies Plugin;
 };
